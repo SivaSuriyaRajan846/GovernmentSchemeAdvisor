@@ -1,0 +1,14 @@
+# Node.js
+node_modules/
+dist/
+.env
+npm-debug.log
+.DS_Store
+
+# Database
+*.sqlite
+*.db
+
+# Build files
+.vite/
+.build/
