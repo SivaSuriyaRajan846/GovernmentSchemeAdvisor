@@ -15,6 +15,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get(`${apiPrefix}/schemes`, async (req, res) => {
     try {
       const schemes = await storage.getSchemes();
+      console.log("Found schemes:", schemes.length);
+      // Log a sample scheme to debug
+      if (schemes.length > 0) {
+        console.log("Sample scheme:", JSON.stringify(schemes[0], null, 2));
+      }
       return res.json(schemes);
     } catch (error) {
       console.error("Error fetching schemes:", error);
@@ -114,6 +119,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching scheme categories:", error);
       return res.status(500).json({ message: "Failed to fetch scheme categories" });
+    }
+  });
+  
+  // Debug endpoint: Get all data for troubleshooting
+  app.get(`${apiPrefix}/debug`, async (req, res) => {
+    try {
+      const schemes = await storage.getSchemes();
+      const categories = await storage.getSchemeCategories();
+      
+      return res.json({
+        schemes,
+        categories,
+        schemeCount: schemes.length,
+        categoryCount: categories.length
+      });
+    } catch (error) {
+      console.error("Error in debug endpoint:", error);
+      return res.status(500).json({ message: "Error in debug endpoint", error: String(error) });
     }
   });
 

@@ -39,25 +39,30 @@ export const storage = {
     // Get all schemes
     const allSchemes = await db.query.schemes.findMany();
     
+    console.log(`Found ${allSchemes.length} schemes total`);
+    
     // Filter and rank schemes based on profile
     const recommendedSchemes = allSchemes.map(scheme => {
       const { matchLevel, reasons, warnings } = calculateEligibility(scheme, profile);
       
+      // Create a new eligibility criteria object rather than spreading
       return {
         ...scheme,
         eligibilityCriteria: {
-          ...scheme.eligibilityCriteria,
-          matchLevel,
-          reasons,
-          warnings
+          matchLevel: matchLevel,
+          reasons: reasons,
+          warnings: warnings
         }
       };
     });
     
     // Sort schemes by match level (high, medium, low)
+    const levelOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    
     return recommendedSchemes.sort((a, b) => {
-      const levelOrder = { high: 0, medium: 1, low: 2 };
-      return levelOrder[a.eligibilityCriteria.matchLevel] - levelOrder[b.eligibilityCriteria.matchLevel];
+      const aLevel = a.eligibilityCriteria.matchLevel as string;
+      const bLevel = b.eligibilityCriteria.matchLevel as string;
+      return (levelOrder[aLevel] || 3) - (levelOrder[bLevel] || 3);
     });
   },
 
@@ -87,107 +92,112 @@ export const storage = {
 };
 
 function calculateEligibility(scheme: any, profile: ProfileFormValues) {
-  const criteria = scheme.eligibilityCriteria;
-  let matchLevel: 'high' | 'medium' | 'low' = 'low';
+  console.log("Calculating eligibility for scheme:", scheme.name);
+  console.log("User profile:", profile);
+  
+  // Parse eligibility criteria - it might be a string in the database
+  let criteria: any = {};
+  try {
+    if (typeof scheme.eligibilityCriteria === 'string') {
+      criteria = JSON.parse(scheme.eligibilityCriteria);
+    } else {
+      criteria = scheme.eligibilityCriteria || {};
+    }
+    console.log("Parsed criteria:", criteria);
+  } catch (error) {
+    console.error("Error parsing eligibility criteria:", error);
+    criteria = {};
+  }
+  
+  let matchLevel: 'high' | 'medium' | 'low' = 'medium'; // Default to medium
   const reasons: string[] = [];
   const warnings: string[] = [];
   
-  // Example eligibility rules based on common patterns
-  // In a real app, this would be much more sophisticated
-  
-  // Income-based eligibility
-  if (criteria.maxIncome && profile.annualIncome <= criteria.maxIncome) {
-    reasons.push(`Income below ${formatIndianCurrency(criteria.maxIncome)}`);
-  } else if (criteria.maxIncome) {
-    warnings.push(`Income exceeds ${formatIndianCurrency(criteria.maxIncome)}`);
-  }
-  
-  // Occupation-based eligibility
-  if (criteria.occupations && criteria.occupations.includes(profile.occupation)) {
-    reasons.push(formatOccupation(profile.occupation));
-  }
-  
-  // Age-based eligibility
-  if (criteria.minAge && criteria.maxAge) {
-    if (profile.age >= criteria.minAge && profile.age <= criteria.maxAge) {
-      reasons.push(`Age between ${criteria.minAge}-${criteria.maxAge}`);
+  // Simple age check
+  if (scheme.min_age && scheme.max_age) {
+    if (profile.age >= scheme.min_age && profile.age <= scheme.max_age) {
+      reasons.push(`Age between ${scheme.min_age}-${scheme.max_age} years`);
     } else {
-      warnings.push(`Age should be between ${criteria.minAge}-${criteria.maxAge}`);
+      warnings.push(`Age should be between ${scheme.min_age}-${scheme.max_age} years`);
     }
-  } else if (criteria.minAge) {
-    if (profile.age >= criteria.minAge) {
-      reasons.push(`Age above ${criteria.minAge}`);
+  } else if (scheme.min_age) {
+    if (profile.age >= scheme.min_age) {
+      reasons.push(`Age above ${scheme.min_age} years`);
     } else {
-      warnings.push(`Age should be above ${criteria.minAge}`);
+      warnings.push(`Age should be above ${scheme.min_age} years`);
     }
-  } else if (criteria.maxAge) {
-    if (profile.age <= criteria.maxAge) {
-      reasons.push(`Age below ${criteria.maxAge}`);
+  } else if (scheme.max_age) {
+    if (profile.age <= scheme.max_age) {
+      reasons.push(`Age below ${scheme.max_age} years`);
     } else {
-      warnings.push(`Age should be below ${criteria.maxAge}`);
+      warnings.push(`Age should be below ${scheme.max_age} years`);
     }
   }
   
-  // Gender-based eligibility
-  if (criteria.gender && profile.gender === criteria.gender) {
-    reasons.push(criteria.gender === 'female' ? 'Female applicant' : 'Male applicant');
-  } else if (criteria.gender && profile.gender !== criteria.gender) {
-    warnings.push(`Only for ${formatGender(criteria.gender)}`);
+  // Income check
+  if (scheme.income_limit) {
+    if (profile.annualIncome <= scheme.income_limit) {
+      reasons.push(`Income below ${formatIndianCurrency(scheme.income_limit)}`);
+    } else {
+      warnings.push(`Income exceeds ${formatIndianCurrency(scheme.income_limit)}`);
+    }
   }
   
-  // Category-based eligibility
-  if (criteria.categories && criteria.categories.includes(profile.socialCategory)) {
-    reasons.push(`${profile.socialCategory.toUpperCase()} category`);
-  } else if (criteria.categories) {
-    warnings.push(`Only for ${criteria.categories.map(c => c.toUpperCase()).join('/')} categories`);
+  // Gender check
+  if (scheme.gender && scheme.gender !== 'any') {
+    if (profile.gender === scheme.gender) {
+      reasons.push(`${formatGender(scheme.gender)} applicant`);
+    } else {
+      warnings.push(`Only for ${formatGender(scheme.gender)}`);
+    }
   }
   
-  // Location-based eligibility
-  if (criteria.states && criteria.states.includes(profile.state)) {
-    reasons.push(`Resident of eligible state`);
-  } else if (criteria.states) {
-    warnings.push('Not available in your state');
+  // Occupation check - using the criteria field if available
+  if (criteria.occupation && Array.isArray(criteria.occupation)) {
+    if (criteria.occupation.includes(profile.occupation) || criteria.occupation.includes('any')) {
+      reasons.push(formatOccupation(profile.occupation));
+    } else {
+      warnings.push(`Not for your occupation`);
+    }
   }
   
-  if (criteria.residenceTypes && criteria.residenceTypes.includes(profile.residence)) {
-    reasons.push(`${capitalizeFirstLetter(profile.residence)} resident`);
-  } else if (criteria.residenceTypes) {
-    warnings.push(`Only for ${criteria.residenceTypes.map(r => capitalizeFirstLetter(r)).join('/')} areas`);
+  // State check - many schemes are available in all states
+  if (scheme.state === 'All' || scheme.state === profile.state) {
+    reasons.push(`Available in ${profile.state}`);
+  } else if (scheme.state && scheme.state !== 'All') {
+    warnings.push(`Only available in ${scheme.state}`);
   }
   
-  // Special card-based eligibility
-  if (criteria.requiresBPL && profile.bplCard) {
-    reasons.push('BPL card holder');
-  } else if (criteria.requiresBPL) {
-    warnings.push('Requires BPL card');
+  // Check if the user is a farmer and this is an agriculture scheme
+  const isAgricultureScheme = scheme.category_id === 2; // Assuming Agriculture category ID is 2
+  if (isAgricultureScheme && profile.occupation === 'farmer') {
+    reasons.push('Agricultural scheme for farmers');
   }
   
-  if (criteria.requiresMGNREGA && profile.mgnregaCard) {
-    reasons.push('MGNREGA card holder');
-  } else if (criteria.requiresMGNREGA) {
-    warnings.push('Requires MGNREGA card');
+  // Check if the user is a woman and this is a women's scheme
+  const isWomenScheme = scheme.category_id === 7; // Assuming Women category ID is 7
+  if (isWomenScheme && profile.gender === 'female') {
+    reasons.push('Women welfare scheme');
   }
   
-  if (criteria.requiresKCC && profile.kisanCreditCard) {
-    reasons.push('Kisan Credit Card holder');
-  } else if (criteria.requiresKCC) {
-    warnings.push('Requires Kisan Credit Card');
-  }
-  
-  if (criteria.requiresDisabilityCert && profile.disabilityCertificate) {
-    reasons.push('Disability Certificate holder');
-  } else if (criteria.requiresDisabilityCert) {
-    warnings.push('Requires Disability Certificate');
+  // Check if the user is a student and this is an education scheme
+  const isEducationScheme = scheme.category_id === 1; // Assuming Education category ID is 1
+  if (isEducationScheme && profile.occupation === 'student') {
+    reasons.push('Education scheme for students');
   }
   
   // Determine match level based on reasons and warnings
-  if (reasons.length > 2 && warnings.length === 0) {
+  if (reasons.length >= 2 && warnings.length === 0) {
     matchLevel = 'high';
   } else if (reasons.length > 0 && warnings.length <= 1) {
     matchLevel = 'medium';
   } else {
     matchLevel = 'low';
   }
+  
+  console.log(`Match level for ${scheme.name}: ${matchLevel}`);
+  console.log(`Reasons: ${reasons.join(', ')}`);
+  console.log(`Warnings: ${warnings.join(', ')}`);
   
   return { matchLevel, reasons, warnings };
 }
