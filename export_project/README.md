@@ -18,7 +18,7 @@ An India-specific Government Scheme Recommender that matches users with relevant
 3. Set up environment variables:
    Create a `.env` file in the root directory with the following variables:
    ```
-   DATABASE_URL=postgres://username:password@localhost:5432/scheme_recommender
+   DATABASE_URL=postgres://username:root@localhost:5432/scheme_recommender
    ```
 
 4. Push the database schema:

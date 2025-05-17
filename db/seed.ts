@@ -1,5 +1,6 @@
 import { db } from "./index";
 import * as schema from "@shared/schema";
+import { eq } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
 
@@ -19,7 +20,7 @@ async function seed() {
     
     for (const category of categories) {
       const existingCategory = await db.query.schemeCategories.findFirst({
-        where: (s) => schema.eq(s.name, category.name)
+        where: eq(schema.schemeCategories.name, category.name)
       });
       
       if (!existingCategory) {
@@ -301,7 +302,7 @@ async function seed() {
     // Add sample schemes to database if they don't exist
     for (const scheme of schemes) {
       const existingScheme = await db.query.schemes.findFirst({
-        where: (s) => schema.eq(s.name, scheme.name)
+        where: eq(schema.schemes.name, scheme.name)
       });
       
       if (!existingScheme) {
